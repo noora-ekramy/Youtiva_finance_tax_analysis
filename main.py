@@ -24,28 +24,34 @@ with col1:
 with col2:
     total_income = st.number_input("Total Income Last Year *", min_value=0.0, step=1000.0)
     total_tax_paid = st.number_input("Total Tax Paid Last Year *", min_value=0.0, step=100.0)
-    dob = st.date_input("Date of Birth *")
+    dob = st.date_input("Date of Birth *", min_value=pd.to_datetime('1900-01-01'))
     filling_status = st.selectbox("Filing Status *", ["Single", "Married filing jointly", "Married filing separately", "Head of household"])
 
 # Spouse Information
-st.header("Spouse Information (if applicable)")
-col1, col2 = st.columns(2)
-with col1:
-    spouse_first_name = st.text_input("Spouse First Name")
-    spouse_last_name = st.text_input("Spouse Last Name")
+if filling_status != "Single":
+    st.header("Spouse Information")
+    col1, col2 = st.columns(2)
+    with col1:
+        spouse_first_name = st.text_input("Spouse First Name")
+        spouse_last_name = st.text_input("Spouse Last Name")
 
-with col2:
-    spouse_dob = st.date_input("Spouse Date of Birth", value=None)
+    with col2:
+        spouse_dob = st.date_input("Spouse Date of Birth", value=None, min_value=pd.to_datetime('1900-01-01'))
 
 # Dependents
-st.header("Dependents Information")
-col1, col2 = st.columns(2)
-with col1:
-    num_dependents = st.number_input("Number of Dependents *", min_value=0, step=1)
-with col2:
-    dependents_income = st.number_input("Dependents' Income *", min_value=0.0, step=100.0)
+if filling_status != "Single":
+    st.header("Dependents Information")
+    col1, col2 = st.columns(2)
+    with col1:
+        num_dependents = st.number_input("Number of Dependents *", min_value=0, step=1)
+    with col2:
+        dependents_income = st.number_input("Dependents' Income *", min_value=0.0, step=100.0)
 
-dependents_ssn = st.selectbox("Do the dependents have a SSN or ITIN? *", ["Yes", "No"])
+    dependents_ssn = st.selectbox("Do the dependents have a SSN or ITIN? *", ["Yes", "No"])
+else:
+    num_dependents = 0
+    dependents_income = 0.0
+    dependents_ssn = "No"
 
 # Income Sources
 st.header("Income Sources")
@@ -80,15 +86,42 @@ def process_uploaded_file(uploaded_file):
 
 # Check if all required fields are filled
 def all_fields_filled():
-    required_fields = [email, first_name, last_name, state, total_income, total_tax_paid, dob, filling_status, num_dependents, dependents_ssn, income_sources, assets_acquired, total_purchased_price, tax_return, profit_loss, balance_sheet]
-    return all(required_fields) and user_question
+    missing_fields = []
+    required_fields = {
+        "Email Address": email,
+        "First Name": first_name,
+        "Last Name": last_name,
+        "State": state if state != "Select your state" else "",
+        "Total Income Last Year": total_income,
+        "Total Tax Paid Last Year": total_tax_paid,
+        "Date of Birth": dob,
+        "Filing Status": filling_status,
+        "Income Sources": income_sources,
+        "Assets Acquired": assets_acquired,
+        "Total Purchased Price": total_purchased_price,
+        "Tax Return": tax_return,
+        "Profit / Loss": profit_loss,
+        "Balance Sheet": balance_sheet,
+    }
+    if filling_status != "Single":
+        required_fields.update({
+            "Number of Dependents": num_dependents,
+            "Dependents' Income": dependents_income,
+            "Dependents SSN/ITIN": dependents_ssn
+        })
+
+    for field, value in required_fields.items():
+        if not value:
+            missing_fields.append(field)
+
+    return missing_fields
 
 def ask_llm(question, data_text):
     """Send financial data and user question to OpenAI API."""
     prompt = f"""
     The following is the user's financial data:
     {data_text}
-    
+
     Question: {question}
     Answer:
     """
@@ -102,7 +135,8 @@ def ask_llm(question, data_text):
     return completion.choices[0].message.content
 
 if st.button("Analyze Data"):
-    if all_fields_filled():
+    missing_fields = all_fields_filled()
+    if not missing_fields:
         financials_text = f"""
         Total Income: {total_income}
         Total Tax Paid: {total_tax_paid}
@@ -111,13 +145,13 @@ if st.button("Analyze Data"):
         Income Sources: {', '.join(income_sources)}
         Assets Acquired: {assets_acquired}
         Total Purchased Price: {total_purchased_price}
-        
+
         Tax Return Data:
         {process_uploaded_file(tax_return)}
-        
+
         Profit & Loss Data:
         {process_uploaded_file(profit_loss)}
-        
+
         Balance Sheet Data:
         {process_uploaded_file(balance_sheet)}
         """
@@ -125,4 +159,4 @@ if st.button("Analyze Data"):
         st.subheader("📢 Analysis")
         st.write(answer)
     else:
-        st.warning("⚠️ Please fill in all required fields and upload the necessary documents before analyzing the data.")
+        st.warning(f"⚠️ Please fill in the following required fields before analyzing the data: {', '.join(missing_fields)}")
